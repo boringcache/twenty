@@ -117,7 +117,7 @@ runs:
       run: |
         set -euo pipefail
         cp .boringcache.toml source/.boringcache.toml
-        perl -0pi -e 's/twenty-proof-dependencies-root/$ENV{CACHE_SCOPE}-dependencies-root/g; s/twenty-proof-dependencies-packages/$ENV{CACHE_SCOPE}-dependencies-packages/g; s/twenty-nx-proof/$ENV{CACHE_SCOPE}-nx/g' source/.boringcache.toml
+        perl -0pi -e 's/twenty-proof-dependencies-root/$ENV{CACHE_SCOPE}-dependencies-root/g; s/twenty-nx-proof/$ENV{CACHE_SCOPE}-nx/g' source/.boringcache.toml
 
     - name: Set up Node.js
       uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -156,7 +156,6 @@ runs:
         mode: nx
         working-directory: source
         cache-profiles: dependencies
-        trust-policy: auto
         fail-on-cache-error: true
         save-always: true
         verify: wait
