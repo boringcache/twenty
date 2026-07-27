@@ -256,7 +256,7 @@ jobs:
             echo
             echo "### Detailed phases"
             echo
-            echo "| Lane | Result | Dependency archive ready | Setup | Nx build | Total |"
+            echo "| Lane | Result | Dependency archive ready | Setup | Nx workload | Total |"
             echo "| --- | --- | --- | ---: | ---: | ---: |"
             echo "| actions/cache seed | $AC_SEED_RESULT | ${AC_SEED_HIT:-false} | ${AC_SEED_SETUP:-n/a}s | ${AC_SEED_BUILD:-n/a}s | ${AC_SEED_TOTAL:-n/a}s |"
             echo "| BoringCache seed | $BC_SEED_RESULT | ${BC_SEED_HIT:-false} | ${BC_SEED_SETUP:-n/a}s | ${BC_SEED_BUILD:-n/a}s | ${BC_SEED_TOTAL:-n/a}s |"

@@ -208,7 +208,7 @@ runs:
       shell: bash
       run: echo "at=$(date +%s)" >> "$GITHUB_OUTPUT"
 
-    - name: Run representative Nx build
+    - name: Run stable Nx workload
       id: workload
       shell: bash
       working-directory: source
@@ -218,7 +218,7 @@ runs:
         NODE_OPTIONS: --max-old-space-size=6144
       run: |
         set -euo pipefail
-        npx nx build twenty-front-component-renderer
+        npx nx run-many --target=generateBarrels --projects=twenty-shared,twenty-ui
 
     - name: Record timings
       if: always()
