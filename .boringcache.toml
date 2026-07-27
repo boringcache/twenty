@@ -1,0 +1,16 @@
+workspace = "boringcache/twenty"
+
+[entries.root-node-modules]
+tag = "twenty-proof-dependencies-root"
+path = "node_modules"
+
+[entries.package-node-modules]
+tag = "twenty-proof-dependencies-packages"
+path = "packages/*/node_modules"
+
+[profiles.dependencies]
+entries = ["root-node-modules", "package-node-modules"]
+
+[adapters.nx]
+tag = "twenty-nx-proof"
+profiles = ["dependencies"]
