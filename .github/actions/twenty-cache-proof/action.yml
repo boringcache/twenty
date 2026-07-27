@@ -149,12 +149,13 @@ runs:
     - name: Configure BoringCache Nx and dependency archive
       if: inputs.strategy == 'boringcache'
       id: boringcache
-      uses: boringcache/one@39e251813b5355a9adbad2c8f771a6efba899fd7 # one-canary-0f5c1789d789
+      uses: boringcache/one@9721d419d2c78c0780963d297eb3f81f24641a27 # v1.13.106
       with:
-        cli-version: vcli-canary-93be2b89d132
+        cli-version: v1.13.106
         setup: none
         mode: nx
         working-directory: source
+        cache-profiles: dependencies
         trust-policy: auto
         fail-on-cache-error: true
         save-always: true
