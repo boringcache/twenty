@@ -154,6 +154,7 @@ runs:
         cli-version: v1.14.0
         setup: none
         mode: nx
+        trust-policy: auto
         working-directory: source
         cache-profiles: dependencies
         fail-on-cache-error: true
