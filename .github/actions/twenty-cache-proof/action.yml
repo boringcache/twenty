@@ -149,9 +149,9 @@ runs:
     - name: Configure BoringCache Nx and dependency archive
       if: inputs.strategy == 'boringcache'
       id: boringcache
-      uses: boringcache/one@9721d419d2c78c0780963d297eb3f81f24641a27 # v1.13.106
+      uses: boringcache/one@6b7033721b37075b2138fd0c769bf088e0836ce6 # v1.14.0
       with:
-        cli-version: v1.13.106
+        cli-version: v1.14.0
         setup: none
         mode: nx
         working-directory: source
