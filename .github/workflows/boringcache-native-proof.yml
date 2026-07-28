@@ -1,0 +1,285 @@
+name: BoringCache rolling cache proof
+run-name: Twenty three-commit rolling proof (${{ github.ref_name }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      seed_sha:
+        description: Commit used to seed both caches.
+        required: true
+        type: string
+        default: 590ae069e8aadd6a4df1738fd3a47ce7d380b250
+      rolling_1_sha:
+        description: First rolling commit.
+        required: true
+        type: string
+        default: 5c23ddb1acd81fa3f39d2a614cb0a63c1c7c978e
+      rolling_2_sha:
+        description: Second rolling commit.
+        required: true
+        type: string
+        default: 79bf20515d8c83adb298582f8ef470f0ef043de4
+      rolling_3_sha:
+        description: Third rolling commit.
+        required: true
+        type: string
+        default: 3c48e27b2ea91c097f01a51b759a987c29caeeac
+  push:
+    branches:
+      - pr/native-cache-proof
+    paths:
+      - .boringcache.toml
+      - .github/actions/twenty-cache-proof/**
+      - .github/workflows/boringcache-native-proof.yml
+      - .github/workflows/reusable-twenty-cache-proof.yml
+
+concurrency:
+  group: twenty-rolling-cache-proof-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  sequence:
+    name: Verify rolling sequence
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SEED_SHA: ${{ inputs.seed_sha || '590ae069e8aadd6a4df1738fd3a47ce7d380b250' }}
+      ROLLING_1_SHA: ${{ inputs.rolling_1_sha || '5c23ddb1acd81fa3f39d2a614cb0a63c1c7c978e' }}
+      ROLLING_2_SHA: ${{ inputs.rolling_2_sha || '79bf20515d8c83adb298582f8ef470f0ef043de4' }}
+      ROLLING_3_SHA: ${{ inputs.rolling_3_sha || '3c48e27b2ea91c097f01a51b759a987c29caeeac' }}
+    steps:
+      - name: Checkout rolling tip and its parents
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ env.ROLLING_3_SHA }}
+          fetch-depth: 4
+          persist-credentials: false
+      - name: Require four consecutive first-parent commits
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$ROLLING_3_SHA" ]]
+          [[ "$(git rev-parse HEAD^)" == "$ROLLING_2_SHA" ]]
+          [[ "$(git rev-parse HEAD^^)" == "$ROLLING_1_SHA" ]]
+          [[ "$(git rev-parse HEAD^^^)" == "$SEED_SHA" ]]
+
+  actions_cache_seed:
+    name: actions/cache / seed
+    needs: sequence
+    uses: ./.github/workflows/reusable-twenty-cache-proof.yml
+    with:
+      strategy: actions-cache
+      step: seed
+      phase: seed
+      source_ref: ${{ inputs.seed_sha || '590ae069e8aadd6a4df1738fd3a47ce7d380b250' }}
+      cache_scope: twenty-roll-${{ github.run_id }}-${{ github.run_attempt }}
+    secrets: inherit
+
+  boringcache_seed:
+    name: BoringCache / seed
+    needs: sequence
+    uses: ./.github/workflows/reusable-twenty-cache-proof.yml
+    with:
+      strategy: boringcache
+      step: seed
+      phase: seed
+      source_ref: ${{ inputs.seed_sha || '590ae069e8aadd6a4df1738fd3a47ce7d380b250' }}
+      cache_scope: twenty-roll-${{ github.run_id }}-${{ github.run_attempt }}
+    secrets: inherit
+
+  actions_cache_rolling_1:
+    name: actions/cache / rolling 1
+    needs: actions_cache_seed
+    uses: ./.github/workflows/reusable-twenty-cache-proof.yml
+    with:
+      strategy: actions-cache
+      step: rolling-1
+      phase: rolling
+      source_ref: ${{ inputs.rolling_1_sha || '5c23ddb1acd81fa3f39d2a614cb0a63c1c7c978e' }}
+      cache_scope: twenty-roll-${{ github.run_id }}-${{ github.run_attempt }}
+    secrets: inherit
+
+  boringcache_rolling_1:
+    name: BoringCache / rolling 1
+    needs: boringcache_seed
+    uses: ./.github/workflows/reusable-twenty-cache-proof.yml
+    with:
+      strategy: boringcache
+      step: rolling-1
+      phase: rolling
+      source_ref: ${{ inputs.rolling_1_sha || '5c23ddb1acd81fa3f39d2a614cb0a63c1c7c978e' }}
+      cache_scope: twenty-roll-${{ github.run_id }}-${{ github.run_attempt }}
+    secrets: inherit
+
+  actions_cache_rolling_2:
+    name: actions/cache / rolling 2
+    needs: actions_cache_rolling_1
+    uses: ./.github/workflows/reusable-twenty-cache-proof.yml
+    with:
+      strategy: actions-cache
+      step: rolling-2
+      phase: rolling
+      source_ref: ${{ inputs.rolling_2_sha || '79bf20515d8c83adb298582f8ef470f0ef043de4' }}
+      cache_scope: twenty-roll-${{ github.run_id }}-${{ github.run_attempt }}
+    secrets: inherit
+
+  boringcache_rolling_2:
+    name: BoringCache / rolling 2
+    needs: boringcache_rolling_1
+    uses: ./.github/workflows/reusable-twenty-cache-proof.yml
+    with:
+      strategy: boringcache
+      step: rolling-2
+      phase: rolling
+      source_ref: ${{ inputs.rolling_2_sha || '79bf20515d8c83adb298582f8ef470f0ef043de4' }}
+      cache_scope: twenty-roll-${{ github.run_id }}-${{ github.run_attempt }}
+    secrets: inherit
+
+  actions_cache_rolling_3:
+    name: actions/cache / rolling 3
+    needs: actions_cache_rolling_2
+    uses: ./.github/workflows/reusable-twenty-cache-proof.yml
+    with:
+      strategy: actions-cache
+      step: rolling-3
+      phase: rolling
+      source_ref: ${{ inputs.rolling_3_sha || '3c48e27b2ea91c097f01a51b759a987c29caeeac' }}
+      cache_scope: twenty-roll-${{ github.run_id }}-${{ github.run_attempt }}
+    secrets: inherit
+
+  boringcache_rolling_3:
+    name: BoringCache / rolling 3
+    needs: boringcache_rolling_2
+    uses: ./.github/workflows/reusable-twenty-cache-proof.yml
+    with:
+      strategy: boringcache
+      step: rolling-3
+      phase: rolling
+      source_ref: ${{ inputs.rolling_3_sha || '3c48e27b2ea91c097f01a51b759a987c29caeeac' }}
+      cache_scope: twenty-roll-${{ github.run_id }}-${{ github.run_attempt }}
+    secrets: inherit
+
+  report:
+    name: Compare rolling series
+    if: always()
+    needs:
+      - sequence
+      - actions_cache_seed
+      - boringcache_seed
+      - actions_cache_rolling_1
+      - boringcache_rolling_1
+      - actions_cache_rolling_2
+      - boringcache_rolling_2
+      - actions_cache_rolling_3
+      - boringcache_rolling_3
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SEED_SHA: ${{ inputs.seed_sha || '590ae069e8aadd6a4df1738fd3a47ce7d380b250' }}
+      ROLLING_1_SHA: ${{ inputs.rolling_1_sha || '5c23ddb1acd81fa3f39d2a614cb0a63c1c7c978e' }}
+      ROLLING_2_SHA: ${{ inputs.rolling_2_sha || '79bf20515d8c83adb298582f8ef470f0ef043de4' }}
+      ROLLING_3_SHA: ${{ inputs.rolling_3_sha || '3c48e27b2ea91c097f01a51b759a987c29caeeac' }}
+      AC_SEED_RESULT: ${{ needs.actions_cache_seed.result }}
+      AC_SEED_HIT: ${{ needs.actions_cache_seed.outputs.archive_hit }}
+      AC_SEED_SETUP: ${{ needs.actions_cache_seed.outputs.setup_seconds }}
+      AC_SEED_BUILD: ${{ needs.actions_cache_seed.outputs.build_seconds }}
+      AC_SEED_TOTAL: ${{ needs.actions_cache_seed.outputs.total_seconds }}
+      BC_SEED_RESULT: ${{ needs.boringcache_seed.result }}
+      BC_SEED_HIT: ${{ needs.boringcache_seed.outputs.archive_hit }}
+      BC_SEED_SETUP: ${{ needs.boringcache_seed.outputs.setup_seconds }}
+      BC_SEED_BUILD: ${{ needs.boringcache_seed.outputs.build_seconds }}
+      BC_SEED_TOTAL: ${{ needs.boringcache_seed.outputs.total_seconds }}
+      AC_R1_RESULT: ${{ needs.actions_cache_rolling_1.result }}
+      AC_R1_HIT: ${{ needs.actions_cache_rolling_1.outputs.archive_hit }}
+      AC_R1_SETUP: ${{ needs.actions_cache_rolling_1.outputs.setup_seconds }}
+      AC_R1_BUILD: ${{ needs.actions_cache_rolling_1.outputs.build_seconds }}
+      AC_R1_TOTAL: ${{ needs.actions_cache_rolling_1.outputs.total_seconds }}
+      BC_R1_RESULT: ${{ needs.boringcache_rolling_1.result }}
+      BC_R1_HIT: ${{ needs.boringcache_rolling_1.outputs.archive_hit }}
+      BC_R1_SETUP: ${{ needs.boringcache_rolling_1.outputs.setup_seconds }}
+      BC_R1_BUILD: ${{ needs.boringcache_rolling_1.outputs.build_seconds }}
+      BC_R1_TOTAL: ${{ needs.boringcache_rolling_1.outputs.total_seconds }}
+      AC_R2_RESULT: ${{ needs.actions_cache_rolling_2.result }}
+      AC_R2_HIT: ${{ needs.actions_cache_rolling_2.outputs.archive_hit }}
+      AC_R2_SETUP: ${{ needs.actions_cache_rolling_2.outputs.setup_seconds }}
+      AC_R2_BUILD: ${{ needs.actions_cache_rolling_2.outputs.build_seconds }}
+      AC_R2_TOTAL: ${{ needs.actions_cache_rolling_2.outputs.total_seconds }}
+      BC_R2_RESULT: ${{ needs.boringcache_rolling_2.result }}
+      BC_R2_HIT: ${{ needs.boringcache_rolling_2.outputs.archive_hit }}
+      BC_R2_SETUP: ${{ needs.boringcache_rolling_2.outputs.setup_seconds }}
+      BC_R2_BUILD: ${{ needs.boringcache_rolling_2.outputs.build_seconds }}
+      BC_R2_TOTAL: ${{ needs.boringcache_rolling_2.outputs.total_seconds }}
+      AC_R3_RESULT: ${{ needs.actions_cache_rolling_3.result }}
+      AC_R3_HIT: ${{ needs.actions_cache_rolling_3.outputs.archive_hit }}
+      AC_R3_SETUP: ${{ needs.actions_cache_rolling_3.outputs.setup_seconds }}
+      AC_R3_BUILD: ${{ needs.actions_cache_rolling_3.outputs.build_seconds }}
+      AC_R3_TOTAL: ${{ needs.actions_cache_rolling_3.outputs.total_seconds }}
+      BC_R3_RESULT: ${{ needs.boringcache_rolling_3.result }}
+      BC_R3_HIT: ${{ needs.boringcache_rolling_3.outputs.archive_hit }}
+      BC_R3_SETUP: ${{ needs.boringcache_rolling_3.outputs.setup_seconds }}
+      BC_R3_BUILD: ${{ needs.boringcache_rolling_3.outputs.build_seconds }}
+      BC_R3_TOTAL: ${{ needs.boringcache_rolling_3.outputs.total_seconds }}
+    steps:
+      - name: Write benchmark summary
+        shell: bash
+        run: |
+          compare_row() {
+            local label="$1" sha="$2" actions_total="$3" boringcache_total="$4"
+            if [[ "$actions_total" =~ ^[0-9]+$ && "$boringcache_total" =~ ^[0-9]+$ ]]; then
+              local saved="$((actions_total - boringcache_total))"
+              local percent
+              percent="$(awk -v saved="$saved" -v control="$actions_total" 'BEGIN { if (control == 0) print "0.0"; else printf "%.1f", (saved / control) * 100 }')"
+              echo "| $label | \`${sha:0:10}\` | ${actions_total}s | ${boringcache_total}s | ${saved}s (${percent}%) |"
+            else
+              echo "| $label | \`${sha:0:10}\` | ${actions_total:-n/a}s | ${boringcache_total:-n/a}s | n/a |"
+            fi
+          }
+
+          {
+            echo "## Twenty three-commit rolling proof"
+            echo
+            echo "Both strategies seed at the same parent commit, then advance through three consecutive commits on fresh runners. actions/cache carries local Nx state forward; BoringCache uses the Nx remote-cache protocol. Both carry the same dependency archive."
+            echo "Step timings exclude each cache action's post-job save; GitHub's job duration includes it."
+            echo
+            echo "### Rolling comparison"
+            echo
+            echo "| Step | Commit | actions/cache | BoringCache | BoringCache saved |"
+            echo "| --- | --- | ---: | ---: | ---: |"
+            compare_row "Seed" "$SEED_SHA" "$AC_SEED_TOTAL" "$BC_SEED_TOTAL"
+            compare_row "Rolling 1" "$ROLLING_1_SHA" "$AC_R1_TOTAL" "$BC_R1_TOTAL"
+            compare_row "Rolling 2" "$ROLLING_2_SHA" "$AC_R2_TOTAL" "$BC_R2_TOTAL"
+            compare_row "Rolling 3" "$ROLLING_3_SHA" "$AC_R3_TOTAL" "$BC_R3_TOTAL"
+            echo
+            echo "### Detailed phases"
+            echo
+            echo "| Lane | Result | Dependency archive ready | Setup | Nx workload | Total |"
+            echo "| --- | --- | --- | ---: | ---: | ---: |"
+            echo "| actions/cache seed | $AC_SEED_RESULT | ${AC_SEED_HIT:-false} | ${AC_SEED_SETUP:-n/a}s | ${AC_SEED_BUILD:-n/a}s | ${AC_SEED_TOTAL:-n/a}s |"
+            echo "| BoringCache seed | $BC_SEED_RESULT | ${BC_SEED_HIT:-false} | ${BC_SEED_SETUP:-n/a}s | ${BC_SEED_BUILD:-n/a}s | ${BC_SEED_TOTAL:-n/a}s |"
+            echo "| actions/cache rolling 1 | $AC_R1_RESULT | ${AC_R1_HIT:-false} | ${AC_R1_SETUP:-n/a}s | ${AC_R1_BUILD:-n/a}s | ${AC_R1_TOTAL:-n/a}s |"
+            echo "| BoringCache rolling 1 | $BC_R1_RESULT | ${BC_R1_HIT:-false} | ${BC_R1_SETUP:-n/a}s | ${BC_R1_BUILD:-n/a}s | ${BC_R1_TOTAL:-n/a}s |"
+            echo "| actions/cache rolling 2 | $AC_R2_RESULT | ${AC_R2_HIT:-false} | ${AC_R2_SETUP:-n/a}s | ${AC_R2_BUILD:-n/a}s | ${AC_R2_TOTAL:-n/a}s |"
+            echo "| BoringCache rolling 2 | $BC_R2_RESULT | ${BC_R2_HIT:-false} | ${BC_R2_SETUP:-n/a}s | ${BC_R2_BUILD:-n/a}s | ${BC_R2_TOTAL:-n/a}s |"
+            echo "| actions/cache rolling 3 | $AC_R3_RESULT | ${AC_R3_HIT:-false} | ${AC_R3_SETUP:-n/a}s | ${AC_R3_BUILD:-n/a}s | ${AC_R3_TOTAL:-n/a}s |"
+            echo "| BoringCache rolling 3 | $BC_R3_RESULT | ${BC_R3_HIT:-false} | ${BC_R3_SETUP:-n/a}s | ${BC_R3_BUILD:-n/a}s | ${BC_R3_TOTAL:-n/a}s |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require every proof lane to pass
+        if: >-
+          needs.sequence.result != 'success' ||
+          needs.actions_cache_seed.result != 'success' ||
+          needs.boringcache_seed.result != 'success' ||
+          needs.actions_cache_rolling_1.result != 'success' ||
+          needs.boringcache_rolling_1.result != 'success' ||
+          needs.actions_cache_rolling_2.result != 'success' ||
+          needs.boringcache_rolling_2.result != 'success' ||
+          needs.actions_cache_rolling_3.result != 'success' ||
+          needs.boringcache_rolling_3.result != 'success'
+        shell: bash
+        run: |
+          echo "At least one seed or rolling proof lane failed." >&2
+          exit 1

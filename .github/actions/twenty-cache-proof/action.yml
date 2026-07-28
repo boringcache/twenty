@@ -1,0 +1,268 @@
+name: Twenty rolling cache proof lane
+description: Run one pinned Twenty commit with either actions/cache or BoringCache.
+
+inputs:
+  strategy:
+    description: Cache backend to exercise.
+    required: true
+  step:
+    description: Seed or rolling step label.
+    required: true
+  phase:
+    description: Seed or rolling cache behavior.
+    required: true
+  source-ref:
+    description: Exact Twenty commit to benchmark.
+    required: true
+  cache-scope:
+    description: Run-scoped cache namespace shared by the full series.
+    required: true
+  restore-token:
+    description: BoringCache restore token.
+    required: false
+  save-token:
+    description: BoringCache save token.
+    required: false
+
+outputs:
+  archive-hit:
+    description: Whether the dependency archive restored exactly.
+    value: ${{ steps.timings.outputs.archive_hit }}
+  setup-seconds:
+    description: Time spent setting up Node, caches, and dependencies.
+    value: ${{ steps.timings.outputs.setup_seconds }}
+  build-seconds:
+    description: Time spent running the Nx workload.
+    value: ${{ steps.timings.outputs.build_seconds }}
+  total-seconds:
+    description: Total measured action time.
+    value: ${{ steps.timings.outputs.total_seconds }}
+  source-sha:
+    description: Verified source commit.
+    value: ${{ steps.source.outputs.sha }}
+
+runs:
+  using: composite
+  steps:
+    - name: Start timing
+      id: started
+      shell: bash
+      run: echo "at=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+    - name: Validate proof inputs
+      shell: bash
+      env:
+        BORINGCACHE_RESTORE_TOKEN: ${{ inputs.restore-token }}
+        BORINGCACHE_SAVE_TOKEN: ${{ inputs.save-token }}
+      run: |
+        set -euo pipefail
+
+        case "${{ inputs.strategy }}" in
+          actions-cache|boringcache) ;;
+          *) echo "strategy must be actions-cache or boringcache" >&2; exit 1 ;;
+        esac
+
+        case "${{ inputs.phase }}" in
+          seed|rolling) ;;
+          *) echo "phase must be seed or rolling" >&2; exit 1 ;;
+        esac
+
+        [[ "${{ inputs.step }}" =~ ^[A-Za-z0-9._-]+$ ]] || {
+          echo "step contains unsupported characters" >&2
+          exit 1
+        }
+        [[ "${{ inputs.cache-scope }}" =~ ^[A-Za-z0-9._-]+$ ]] || {
+          echo "cache-scope contains unsupported characters" >&2
+          exit 1
+        }
+        [[ "${{ inputs.source-ref }}" =~ ^[0-9a-f]{40}$ ]] || {
+          echo "source-ref must be an exact 40-character commit SHA" >&2
+          exit 1
+        }
+
+        if [[ "${{ inputs.strategy }}" == "boringcache" ]]; then
+          [[ -n "$BORINGCACHE_RESTORE_TOKEN" ]] || {
+            echo "BORINGCACHE_RESTORE_TOKEN is missing" >&2
+            exit 1
+          }
+          [[ -n "$BORINGCACHE_SAVE_TOKEN" ]] || {
+            echo "BORINGCACHE_SAVE_TOKEN is missing" >&2
+            exit 1
+          }
+        fi
+
+    - name: Checkout pinned Twenty source
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      with:
+        repository: ${{ github.repository }}
+        ref: ${{ inputs.source-ref }}
+        path: source
+        fetch-depth: 1
+        persist-credentials: false
+
+    - name: Verify source commit
+      id: source
+      shell: bash
+      run: |
+        set -euo pipefail
+        source_sha="$(git -C source rev-parse HEAD)"
+        [[ "$source_sha" == "${{ inputs.source-ref }}" ]]
+        echo "sha=$source_sha" >> "$GITHUB_OUTPUT"
+
+    - name: Scope BoringCache tags to this series
+      if: inputs.strategy == 'boringcache'
+      shell: bash
+      env:
+        CACHE_SCOPE: ${{ inputs.cache-scope }}
+      run: |
+        set -euo pipefail
+        cp .boringcache.toml source/.boringcache.toml
+        perl -0pi -e 's/twenty-proof-dependencies-root/$ENV{CACHE_SCOPE}-dependencies-root/g; s/twenty-nx-proof/$ENV{CACHE_SCOPE}-nx/g' source/.boringcache.toml
+
+    - name: Set up Node.js
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      with:
+        node-version: '24'
+
+    - name: Free disk space for dependencies
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /opt/hostedtoolcache/CodeQL
+        df -h
+
+    - name: Restore dependency archive with GitHub Actions Cache
+      if: inputs.strategy == 'actions-cache'
+      id: actions-dependencies
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: |
+          source/node_modules
+          source/packages/*/node_modules
+        key: ${{ inputs.cache-scope }}-dependencies-${{ hashFiles('source/yarn.lock') }}
+        restore-keys: |
+          ${{ inputs.cache-scope }}-dependencies-
+
+    - name: Configure BoringCache Nx and dependency archive
+      if: inputs.strategy == 'boringcache'
+      id: boringcache
+      uses: boringcache/one@6b7033721b37075b2138fd0c769bf088e0836ce6 # v1.14.0
+      with:
+        cli-version: v1.14.0
+        setup: none
+        mode: nx
+        working-directory: source
+        cache-profiles: dependencies
+        fail-on-cache-error: true
+        save-always: true
+        verify: wait
+        diagnostics: summary
+        metadata-hints: |
+          benchmark=twenty-rolling-cache-proof
+          step=${{ inputs.step }}
+          source=${{ inputs.source-ref }}
+      env:
+        BORINGCACHE_RESTORE_TOKEN: ${{ inputs.restore-token }}
+        BORINGCACHE_SAVE_TOKEN: ${{ inputs.save-token }}
+
+    - name: Check restored dependencies
+      id: dependencies
+      shell: bash
+      working-directory: source
+      env:
+        ACTIONS_CACHE_EXACT_HIT: ${{ steps.actions-dependencies.outputs.cache-hit }}
+      run: |
+        ready=false
+        if [[ -x node_modules/.bin/nx ]]; then
+          if [[ "${{ inputs.strategy }}" == "boringcache" || "$ACTIONS_CACHE_EXACT_HIT" == "true" ]]; then
+            ready=true
+          fi
+        fi
+        echo "ready=$ready" >> "$GITHUB_OUTPUT"
+
+    - name: Install dependencies
+      if: steps.dependencies.outputs.ready != 'true'
+      shell: bash
+      working-directory: source
+      run: |
+        set -euo pipefail
+        corepack enable
+        yarn config set enableHardenedMode true
+        yarn config set enableScripts false
+        yarn --immutable --check-cache
+
+    - name: Restore Nx state with GitHub Actions Cache
+      if: inputs.strategy == 'actions-cache'
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: source/.nx
+        key: ${{ inputs.cache-scope }}-nx-${{ inputs.source-ref }}
+        restore-keys: |
+          ${{ inputs.cache-scope }}-nx-
+
+    - name: Finish setup timing
+      id: setup-finished
+      shell: bash
+      run: echo "at=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+    - name: Run stable Nx workload
+      id: workload
+      shell: bash
+      working-directory: source
+      env:
+        CI: '1'
+        NX_DAEMON: 'false'
+        NODE_OPTIONS: --max-old-space-size=6144
+      run: |
+        set -euo pipefail
+        npx nx run-many --target=generateBarrels --projects=twenty-shared,twenty-ui
+
+    - name: Record timings
+      if: always()
+      id: timings
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        finished_at="$(date +%s)"
+        started_at="${{ steps.started.outputs.at }}"
+        setup_finished_at="${{ steps.setup-finished.outputs.at }}"
+        started_at="${started_at:-$finished_at}"
+        setup_finished_at="${setup_finished_at:-$finished_at}"
+        setup_seconds="$((setup_finished_at - started_at))"
+        build_seconds="$((finished_at - setup_finished_at))"
+        total_seconds="$((finished_at - started_at))"
+        archive_hit="${{ steps.dependencies.outputs.ready }}"
+        archive_hit="${archive_hit:-false}"
+        source_sha="${{ steps.source.outputs.sha }}"
+        source_sha="${source_sha:-${{ inputs.source-ref }}}"
+
+        echo "archive_hit=$archive_hit" >> "$GITHUB_OUTPUT"
+        echo "setup_seconds=$setup_seconds" >> "$GITHUB_OUTPUT"
+        echo "build_seconds=$build_seconds" >> "$GITHUB_OUTPUT"
+        echo "total_seconds=$total_seconds" >> "$GITHUB_OUTPUT"
+
+        mkdir -p benchmark-results
+        printf '{"strategy":"%s","step":"%s","phase":"%s","archive_hit":"%s","setup_seconds":%s,"build_seconds":%s,"total_seconds":%s,"source_sha":"%s","workload_result":"%s"}\n' \
+          "${{ inputs.strategy }}" \
+          "${{ inputs.step }}" \
+          "${{ inputs.phase }}" \
+          "$archive_hit" \
+          "$setup_seconds" \
+          "$build_seconds" \
+          "$total_seconds" \
+          "$source_sha" \
+          "${{ steps.workload.outcome }}" \
+          > "benchmark-results/${{ inputs.strategy }}-${{ inputs.step }}.json"
+
+    - name: Upload proof result
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: twenty-cache-proof-${{ inputs.strategy }}-${{ inputs.step }}
+        path: benchmark-results/${{ inputs.strategy }}-${{ inputs.step }}.json
+        if-no-files-found: error
+        retention-days: 30

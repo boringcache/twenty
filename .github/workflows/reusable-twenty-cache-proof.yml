@@ -1,0 +1,74 @@
+name: Twenty rolling cache proof job
+
+on:
+  workflow_call:
+    inputs:
+      strategy:
+        required: true
+        type: string
+      step:
+        required: true
+        type: string
+      phase:
+        required: true
+        type: string
+      source_ref:
+        required: true
+        type: string
+      cache_scope:
+        required: true
+        type: string
+    secrets:
+      BORINGCACHE_RESTORE_TOKEN:
+        required: false
+      BORINGCACHE_SAVE_TOKEN:
+        required: false
+    outputs:
+      archive_hit:
+        value: ${{ jobs.proof.outputs.archive_hit }}
+      setup_seconds:
+        value: ${{ jobs.proof.outputs.setup_seconds }}
+      build_seconds:
+        value: ${{ jobs.proof.outputs.build_seconds }}
+      total_seconds:
+        value: ${{ jobs.proof.outputs.total_seconds }}
+      source_sha:
+        value: ${{ jobs.proof.outputs.source_sha }}
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  proof:
+    name: ${{ inputs.strategy }} / ${{ inputs.step }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      archive_hit: ${{ steps.proof.outputs.archive-hit }}
+      setup_seconds: ${{ steps.proof.outputs.setup-seconds }}
+      build_seconds: ${{ steps.proof.outputs.build-seconds }}
+      total_seconds: ${{ steps.proof.outputs.total-seconds }}
+      source_sha: ${{ steps.proof.outputs.source-sha }}
+    steps:
+      - name: Checkout proof harness
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: |
+            .boringcache.toml
+            .github/actions/twenty-cache-proof
+          sparse-checkout-cone-mode: false
+
+      - name: Run cache proof step
+        id: proof
+        uses: ./.github/actions/twenty-cache-proof
+        with:
+          strategy: ${{ inputs.strategy }}
+          step: ${{ inputs.step }}
+          phase: ${{ inputs.phase }}
+          source-ref: ${{ inputs.source_ref }}
+          cache-scope: ${{ inputs.cache_scope }}
+          restore-token: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
+          save-token: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
